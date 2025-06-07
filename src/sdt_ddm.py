@@ -164,7 +164,7 @@ def read_data(file_path, prepare_for='sdt', display=False):
                         'mode': 'error',
                         **percentiles
                     })
-                    
+
         data = pd.DataFrame(dp_data)
                 
         if display:
@@ -186,38 +186,61 @@ def apply_hierarchical_sdt_model(data):
     Returns:
         PyMC model object
     """
-    # Get unique participants and conditions
+    # GET UNIQUE PARTICIPANT IDS
     P = len(data['pnum'].unique())
-    C = len(data['condition'].unique())
-    
+    participant_ids = sorted(data['pnum'].unique())
+
+    # MAP PARTICIPANTS TO INDICES
+    pnum_to_index = {pid: i for i, pid in enumerate(participant_ids)}
+    data['p_index'] = data['pnum'].map(pnum_to_index)
+
+    # EXTRACT FACTOR LEVELS
+    difficulty = data['condition'] // 2  
+    stimulus_type = data['condition'] % 2
+
     # Define the hierarchical model
     with pm.Model() as sdt_model:
-        # Group-level parameters
-        mean_d_prime = pm.Normal('mean_d_prime', mu=0.0, sigma=1.0, shape=C)
-        stdev_d_prime = pm.HalfNormal('stdev_d_prime', sigma=1.0)
+        # GROUP-LEVEL PRIORS AND D-PRIME EFFECTS
+        intercept_d = pm.Normal('intercept_d', mu=1.0, sigma=1.0)
+        difficulty_effect_d = pm.Normal('difficulty_effect_d', mu=0.0, sigma=0.5)
+        stimulus_effect_d = pm.Normal('stimulus_effect_d', mu=0.0, sigma=0.5)
+        interaction_effect_d = pm.Normal('interaction_effect_d', mu=0.0, sigma=0.5)
         
-        mean_criterion = pm.Normal('mean_criterion', mu=0.0, sigma=1.0, shape=C)
-        stdev_criterion = pm.HalfNormal('stdev_criterion', sigma=1.0)
+        # CRITERION/BIAS EFFECTS
+        intercept_c = pm.Normal('intercept_c', mu=0.0, sigma=1.0)
+        difficulty_effect_c = pm.Normal('difficulty_effect_c', mu=0.0, sigma=0.5)
+        stimulus_effect_c = pm.Normal('stimulus_effect_c', mu=0.0, sigma=0.5)
+        interaction_effect_c = pm.Normal('interaction_effect_c', mu=0.0, sigma=0.5)
         
-        # Individual-level parameters
-        d_prime = pm.Normal('d_prime', mu=mean_d_prime, sigma=stdev_d_prime, shape=(P, C))
-        criterion = pm.Normal('criterion', mu=mean_criterion, sigma=stdev_criterion, shape=(P, C))
+        # CONSIDER INDIVIDUAL VARIATION
+        sigma_d = pm.HalfNormal('sigma_d', sigma=0.5)
+        sigma_c = pm.HalfNormal('sigma_c', sigma=0.5)
+                
+       # CALCULATE CONDITION-SPECIFIC GROUP MEANS
+        mu_d = (intercept_d + 
+                difficulty_effect_d * difficulty + 
+                stimulus_effect_d * stimulus_type +
+                interaction_effect_d * difficulty * stimulus_type)
         
-        # Calculate hit and false alarm rates using SDT
+        mu_c = (intercept_c + 
+                difficulty_effect_c * difficulty + 
+                stimulus_effect_c * stimulus_type +
+                interaction_effect_c * difficulty * stimulus_type)
+
+        # INDIVIDUAL PARAMETERS
+        d_prime_raw = pm.Normal('d_prime_raw', mu=0, sigma=1, shape=P)
+        criterion_raw = pm.Normal('criterion_raw', mu=0, sigma=1, shape=P)
+        
+        # PARAMETERIZATION
+        d_prime = mu_d + sigma_d * d_prime_raw[data['p_idx']]
+        criterion = mu_c + sigma_c * criterion_raw[data['p_idx']]
+        
+        # DEFINE SDT MODEL
         hit_rate = pm.math.invlogit(d_prime - criterion)
         false_alarm_rate = pm.math.invlogit(-criterion)
-                
-        # Likelihood for signal trials
-        # Note: pnum is 1-indexed in the data, but needs to be 0-indexed for the model, so we change the indexing here.  The results table will show participant numbers starting from 0, so we need to interpret the results accordingly.
-        pm.Binomial('hit_obs', 
-                   n=data['nSignal'], 
-                   p=hit_rate[data['pnum']-1, data['condition']], 
-                   observed=data['hits'])
-        
-        # Likelihood for noise trials
-        pm.Binomial('false_alarm_obs', 
-                   n=data['nNoise'], 
-                   p=false_alarm_rate[data['pnum']-1, data['condition']], 
+
+        pm.Binomial('hit_obs', n=data['nSignal'], p=hit_rate, observed=data['hits'])
+        pm.Binomial('false_alarm_obs', n=data['nNoise'], p=false_alarm_rate, 
                    observed=data['false_alarms'])
     
     return sdt_model
