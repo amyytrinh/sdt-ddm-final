@@ -164,10 +164,12 @@ def read_data(file_path, prepare_for='sdt', display=False):
                         'mode': 'error',
                         **percentiles
                     })
+                    
+        data = pd.DataFrame(dp_data)
                 
         if display:
             print("\nDelta plots data:")
-            print(dp_data)
+            print(data.head())
 
     return data
 
