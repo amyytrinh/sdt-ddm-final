@@ -26,6 +26,10 @@ CONDITION_NAMES = {
     3: 'Hard Complex'
 }
 
+# FACTOR LEVEL NAMES 
+DIFFICULTY_NAMES = {0: 'Easy', 1: 'Hard'}
+STIMULUS_NAMES = {0: 'Simple', 1: 'Complex'}
+
 # Percentiles used for delta plot analysis
 PERCENTILES = [10, 30, 50, 70, 90]
 
@@ -115,11 +119,9 @@ def read_data(file_path, prepare_for='sdt', display=False):
                     'nNoise': 'sum'
                 }).round(2))
     
-    # Prepare data for delta plot analysis
-    if prepare_for == 'delta plots':
-        # Initialize DataFrame for delta plot data
-        dp_data = pd.DataFrame(columns=['pnum', 'condition', 'mode', 
-                                      *[f'p{p}' for p in PERCENTILES]])
+    # PREPARE DATA FOR DELTA PLOT ANALYSIS
+    elif prepare_for == 'delta plots':
+        dp_data = []
         
         # Process data for each participant and condition
         for pnum in data['pnum'].unique():
@@ -127,38 +129,45 @@ def read_data(file_path, prepare_for='sdt', display=False):
                 # Get data for this participant and condition
                 c_data = data[(data['pnum'] == pnum) & (data['condition'] == condition)]
                 
-                # Calculate percentiles for overall RTs
+                if len(c_data) == 0: 
+                    continue
+
+                # OVERALL RTS
                 overall_rt = c_data['rt']
-                dp_data = pd.concat([dp_data, pd.DataFrame({
-                    'pnum': [pnum],
-                    'condition': [condition],
-                    'mode': ['overall'],
-                    **{f'p{p}': [np.percentile(overall_rt, p)] for p in PERCENTILES}
-                })])
+                if len(overall_rt) > 0:
+                    percentiles = {f'p{p}': np.percentile(overall_rt, p) for p in PERCENTILES}
+                    dp_data.append({
+                        'pnum': pnum,
+                        'condition': condition,
+                        'mode': 'overall',
+                        **percentiles
+                    })
                 
-                # Calculate percentiles for accurate responses
-                accurate_rt = c_data[c_data['accuracy'] == 1]['rt']
-                dp_data = pd.concat([dp_data, pd.DataFrame({
-                    'pnum': [pnum],
-                    'condition': [condition],
-                    'mode': ['accurate'],
-                    **{f'p{p}': [np.percentile(accurate_rt, p)] for p in PERCENTILES}
-                })])
+                # ACCURATE RTS
+                accurate_rt = c_data[c_data['accuracy'] == 1]['rt'].values
+                if len(accurate_rt) > 0:
+                    percentiles = {f'p{p}': np.percentile(accurate_rt, p) for p in PERCENTILES}
+                    dp_data.append({
+                        'pnum': pnum,
+                        'condition': condition,
+                        'mode': 'accurate',
+                        **percentiles
+                    })
                 
-                # Calculate percentiles for error responses
-                error_rt = c_data[c_data['accuracy'] == 0]['rt']
-                dp_data = pd.concat([dp_data, pd.DataFrame({
-                    'pnum': [pnum],
-                    'condition': [condition],
-                    'mode': ['error'],
-                    **{f'p{p}': [np.percentile(error_rt, p)] for p in PERCENTILES}
-                })])
+                # ERROR RTS
+                error_rt = c_data[c_data['accuracy'] == 0]['rt'].values
+                if len(error_rt) > 0:
+                    percentiles = {f'p{p}': np.percentile(error_rt, p) for p in PERCENTILES}
+                    dp_data.append({
+                        'pnum': pnum,
+                        'condition': condition,
+                        'mode': 'error',
+                        **percentiles
+                    })
                 
         if display:
             print("\nDelta plots data:")
             print(dp_data)
-            
-        data = pd.DataFrame(dp_data)
 
     return data
 
