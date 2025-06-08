@@ -245,6 +245,96 @@ def apply_hierarchical_sdt_model(data):
     
     return sdt_model
 
+def analyze_sdt_results(trace, model):
+    """ANALYZE AND VISUALIZE SDT MODEL RESULTS"""
+    
+    # SUMMARY STATISTICS
+    print("*** SUMMARY STATISTICS ***")
+    summary = az.summary(trace, hdi_prob=0.94)
+    print(summary)
+    
+    # EXTRACT KEY PARAMETERS
+    difficulty_d = trace.posterior['difficulty_effect_d'].values.flatten()
+    stimulus_d = trace.posterior['stimulus_effect_d'].values.flatten()
+    interaction_d = trace.posterior['interaction_effect_d'].values.flatten()
+    
+    difficulty_c = trace.posterior['difficulty_effect_c'].values.flatten()
+    stimulus_c = trace.posterior['stimulus_effect_c'].values.flatten()
+    interaction_c = trace.posterior['interaction_effect_c'].values.flatten()
+    
+    # CREATE FIGURE
+    fig, axes = plt.subplots(2, 3, figsize=(15, 10))
+    
+    # D-PRIME
+    axes[0,0].hist(difficulty_d, bins=30, alpha=0.7, color='blue', edgecolor='black')
+    axes[0,0].axvline(0, color='red', linestyle='--')
+    axes[0,0].set_title('Difficulty Effect on d-prime')
+    axes[0,0].set_xlabel('Effect Size')
+    
+    axes[0,1].hist(stimulus_d, bins=30, alpha=0.7, color='green', edgecolor='black')
+    axes[0,1].axvline(0, color='red', linestyle='--')
+    axes[0,1].set_title('Stimulus Type Effect on d-prime')
+    axes[0,1].set_xlabel('Effect Size')
+    
+    axes[0,2].hist(interaction_d, bins=30, alpha=0.7, color='purple', edgecolor='black')
+    axes[0,2].axvline(0, color='red', linestyle='--')
+    axes[0,2].set_title('Interaction Effect on d-prime')
+    axes[0,2].set_xlabel('Effect Size')
+    
+    # CRITERION
+    axes[1,0].hist(difficulty_c, bins=30, alpha=0.7, color='blue', edgecolor='black')
+    axes[1,0].axvline(0, color='red', linestyle='--')
+    axes[1,0].set_title('Difficulty Effect on Criterion')
+    axes[1,0].set_xlabel('Effect Size')
+    
+    axes[1,1].hist(stimulus_c, bins=30, alpha=0.7, color='green', edgecolor='black')
+    axes[1,1].axvline(0, color='red', linestyle='--')
+    axes[1,1].set_title('Stimulus Type Effect on Criterion')
+    axes[1,1].set_xlabel('Effect Size')
+    
+    axes[1,2].hist(interaction_c, bins=30, alpha=0.7, color='purple', edgecolor='black')
+    axes[1,2].axvline(0, color='red', linestyle='--')
+    axes[1,2].set_title('Interaction Effect on Criterion')
+    axes[1,2].set_xlabel('Effect Size')
+    
+    plt.tight_layout()
+    plt.savefig('sdt_effects_posterior.png', dpi=300, bbox_inches='tight')
+    plt.show()
+    
+    # EFFECT SIZE SUMMARY
+    print("\n *** EFFECT SIZE SUMMARY *** ")
+    effects = {
+        'Difficulty -> d-prime': difficulty_d,
+        'Stimulus Type -> d-prime': stimulus_d,
+        'Interaction -> d-prime': interaction_d,
+        'Difficulty -> Criterion': difficulty_c,
+        'Stimulus Type -> Criterion': stimulus_c,
+        'Interaction -> Criterion': interaction_c
+    }
+    
+    results_df = []
+    for name, samples in effects.items():
+        mean_effect = np.mean(samples)
+        hdi_low, hdi_high = np.percentile(samples, [2.5, 97.5])
+        prob_positive = np.mean(samples > 0)
+        prob_negative = np.mean(samples < 0)
+        
+        results_df.append({
+            'Effect': name,
+            'Mean': mean_effect,
+            'HDI_Low': hdi_low,
+            'HDI_High': hdi_high,
+            'P(Effect > 0)': prob_positive,
+            'P(Effect < 0)': prob_negative
+        })
+    
+    results_df = pd.DataFrame(results_df)
+    print(results_df.round(3))
+    
+    return results_df
+
+
+
 def draw_delta_plots(data, pnum):
     """Draw delta plots comparing RT distributions between condition pairs.
     
@@ -256,98 +346,160 @@ def draw_delta_plots(data, pnum):
         data: DataFrame with RT percentile data
         pnum: Participant number to plot
     """
-    # Filter data for specified participant
-    data = data[data['pnum'] == pnum]
+    # GET UNIQUE PARTICIPANTS AND CONDITIONS
+    participants = data['pnum'].unique()
+    conditions = sorted(data['condition'].unique())
     
-    # Get unique conditions and create subplot matrix
-    conditions = data['condition'].unique()
-    n_conditions = len(conditions)
     
-    # Create figure with subplots matrix
-    fig, axes = plt.subplots(n_conditions, n_conditions, 
-                            figsize=(4*n_conditions, 4*n_conditions))
+    # COMPARISON MATRIX
+    comparisons = [
+        (0, 1, 'Easy: Simple vs Complex'),  # Stimulus effect in Easy
+        (2, 3, 'Hard: Simple vs Complex'),  # Stimulus effect in Hard  
+        (0, 2, 'Simple: Easy vs Hard'),     # Difficulty effect in Simple
+        (1, 3, 'Complex: Easy vs Hard')     # Difficulty effect in Complex
+    ]
     
-    # Create output directory
-    OUTPUT_DIR = Path(__file__).parent.parent.parent / 'output'
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
+    axes = axes.flatten()
     
-    # Define marker style for plots
-    marker_style = {
-        'marker': 'o',
-        'markersize': 10,
-        'markerfacecolor': 'white',
-        'markeredgewidth': 2,
-        'linewidth': 3
-    }
+    for idx, (cond1, cond2, title) in enumerate(comparisons):
+        ax = axes[idx]
+        
+        # OVERALL DELTAS ACROSS PARTICIPANTS
+        overall_deltas = []
+        accurate_deltas = []
+        error_deltas = []
+        
+        for pnum in participants:
+            p_data = data[data['pnum'] == pnum]
+            
+            # GET PERCENTILES FOR EACH CONDITION
+            c1_overall = p_data[(p_data['condition'] == cond1) & (p_data['mode'] == 'overall')]
+            c2_overall = p_data[(p_data['condition'] == cond2) & (p_data['mode'] == 'overall')]
+            
+            c1_accurate = p_data[(p_data['condition'] == cond1) & (p_data['mode'] == 'accurate')]
+            c2_accurate = p_data[(p_data['condition'] == cond2) & (p_data['mode'] == 'accurate')]
+            
+            c1_error = p_data[(p_data['condition'] == cond1) & (p_data['mode'] == 'error')]
+            c2_error = p_data[(p_data['condition'] == cond2) & (p_data['mode'] == 'error')]
+            
+            if len(c1_overall) > 0 and len(c2_overall) > 0:
+                overall_delta = []
+                for p in PERCENTILES:
+                    delta = c2_overall[f'p{p}'].iloc[0] - c1_overall[f'p{p}'].iloc[0]
+                    overall_delta.append(delta)
+                overall_deltas.append(overall_delta)
+            
+            if len(c1_accurate) > 0 and len(c2_accurate) > 0:
+                accurate_delta = []
+                for p in PERCENTILES:
+                    delta = c2_accurate[f'p{p}'].iloc[0] - c1_accurate[f'p{p}'].iloc[0]
+                    accurate_delta.append(delta)
+                accurate_deltas.append(accurate_delta)
+            
+            if len(c1_error) > 0 and len(c2_error) > 0:
+                error_delta = []
+                for p in PERCENTILES:
+                    delta = c2_error[f'p{p}'].iloc[0] - c1_error[f'p{p}'].iloc[0]
+                    error_delta.append(delta)
+                error_deltas.append(error_delta)
+        
+        # CONVERT TO ARRAY AND CALCULATE MEAN
+        if overall_deltas:
+            overall_deltas = np.array(overall_deltas)
+            overall_mean = np.mean(overall_deltas, axis=0)
+            overall_sem = stats.sem(overall_deltas, axis=0)
+            overall_ci = overall_sem * 1.96
+            
+            ax.errorbar(PERCENTILES, overall_mean, yerr=overall_ci, 
+                       color='black', marker='o', linewidth=2, markersize=6,
+                       label='Overall')
+        
+        if accurate_deltas:
+            accurate_deltas = np.array(accurate_deltas)
+            accurate_mean = np.mean(accurate_deltas, axis=0)
+            accurate_sem = stats.sem(accurate_deltas, axis=0)
+            accurate_ci = accurate_sem * 1.96
+            
+            ax.errorbar(PERCENTILES, accurate_mean, yerr=accurate_ci,
+                       color='green', marker='s', linewidth=2, markersize=6,
+                       label='Accurate')
+        
+        if error_deltas:
+            error_deltas = np.array(error_deltas)
+            error_mean = np.mean(error_deltas, axis=0)
+            error_sem = stats.sem(error_deltas, axis=0)
+            error_ci = error_sem * 1.96
+            
+            ax.errorbar(PERCENTILES, error_mean, yerr=error_ci,
+                       color='red', marker='^', linewidth=2, markersize=6,
+                       label='Error')
+        
+        ax.axhline(y=0, color='gray', linestyle='--', alpha=0.5)
+        ax.set_xlabel('Percentile')
+        ax.set_ylabel('RT Difference (s)')
+        ax.set_title(title)
+        ax.legend()
+        ax.grid(True, alpha=0.3)
     
-    # Create delta plots for each condition pair
-    for i, cond1 in enumerate(conditions):
-        for j, cond2 in enumerate(conditions):
-            # Add labels only to edge subplots
-            if j == 0:
-                axes[i,j].set_ylabel('Difference in RT (s)', fontsize=12)
-            if i == len(axes)-1:
-                axes[i,j].set_xlabel('Percentile', fontsize=12)
-                
-            # Skip diagonal and lower triangle for overall plots
-            if i > j:
-                continue
-            if i == j:
-                axes[i,j].axis('off')
-                continue
-            
-            # Create masks for condition and plotting mode
-            cmask1 = data['condition'] == cond1
-            cmask2 = data['condition'] == cond2
-            overall_mask = data['mode'] == 'overall'
-            error_mask = data['mode'] == 'error'
-            accurate_mask = data['mode'] == 'accurate'
-            
-            # Calculate RT differences for overall performance
-            quantiles1 = [data[cmask1 & overall_mask][f'p{p}'] for p in PERCENTILES]
-            quantiles2 = [data[cmask2 & overall_mask][f'p{p}'] for p in PERCENTILES]
-            overall_delta = np.array(quantiles2) - np.array(quantiles1)
-            
-            # Calculate RT differences for error responses
-            error_quantiles1 = [data[cmask1 & error_mask][f'p{p}'] for p in PERCENTILES]
-            error_quantiles2 = [data[cmask2 & error_mask][f'p{p}'] for p in PERCENTILES]
-            error_delta = np.array(error_quantiles2) - np.array(error_quantiles1)
-            
-            # Calculate RT differences for accurate responses
-            accurate_quantiles1 = [data[cmask1 & accurate_mask][f'p{p}'] for p in PERCENTILES]
-            accurate_quantiles2 = [data[cmask2 & accurate_mask][f'p{p}'] for p in PERCENTILES]
-            accurate_delta = np.array(accurate_quantiles2) - np.array(accurate_quantiles1)
-            
-            # Plot overall RT differences
-            axes[i,j].plot(PERCENTILES, overall_delta, color='black', **marker_style)
-            
-            # Plot error and accurate RT differences
-            axes[j,i].plot(PERCENTILES, error_delta, color='red', **marker_style)
-            axes[j,i].plot(PERCENTILES, accurate_delta, color='green', **marker_style)
-            axes[j,i].legend(['Error', 'Accurate'], loc='upper left')
+    plt.tight_layout()
+    if save_plots:
+        plt.savefig('delta_plots.png', dpi=300, bbox_inches='tight')
+    plt.show()
 
-            # Set y-axis limits and add reference line
-            axes[i,j].set_ylim(bottom=-1/3, top=1/2)
-            axes[j,i].set_ylim(bottom=-1/3, top=1/2)
-            axes[i,j].axhline(y=0, color='gray', linestyle='--', alpha=0.5) 
-            axes[j,i].axhline(y=0, color='gray', linestyle='--', alpha=0.5)
-            
-            # Add condition labels
-            axes[i,j].text(50, -0.27, 
-                          f'{CONDITION_NAMES[conditions[j]]} - {CONDITION_NAMES[conditions[i]]}', 
-                          ha='center', va='top', fontsize=12)
-            
-            axes[j,i].text(50, -0.27, 
-                          f'{CONDITION_NAMES[conditions[j]]} - {CONDITION_NAMES[conditions[i]]}', 
-                          ha='center', va='top', fontsize=12)
-            
-            plt.tight_layout()
-            
-    # Save the figure
-    plt.savefig(OUTPUT_DIR / f'delta_plots_{pnum}.png')
+def main_analysis(file_path):
+    """ Run analysis """
+    sdt_data = read_data(file_path, prepare_for='sdt', display=True)
+    
+    # Read data for delta plot analysis  
+    delta_data = read_data(file_path, prepare_for='delta plots', display=True)
+    
+    print("\n*** RUNNING HIERARCHICAL SDT MODEL ***")
+    
+    # Make delta plot
+    sdt_model = draw_delta_plots(sdt_data)
+    
+    # Sample from posterior
+    with sdt_model:
+        trace = pm.sample(2000, tune=1000, chains=4, 
+                         target_accept=0.94, random_seed=42)
+    
+    # Analyze results
+    results_df = analyze_sdt_results(trace, sdt_model)
+    
+    print("\n*** CREATING ENHANCED DELTA PLOTS ***")
+    
+    # Create delta plots
+    enhanced_delta_plots(delta_data)
+    
+    print("\n*** SYNTHESIS AND INTERPRETATION ***")
+    
+    # Extract key findings for interpretation
+    difficulty_d_mean = results_df[results_df['Effect'] == 'Difficulty → d-prime']['Mean'].iloc[0]
+    stimulus_d_mean = results_df[results_df['Effect'] == 'Stimulus Type → d-prime']['Mean'].iloc[0]
+    
+    difficulty_c_mean = results_df[results_df['Effect'] == 'Difficulty → Criterion']['Mean'].iloc[0] 
+    stimulus_c_mean = results_df[results_df['Effect'] == 'Stimulus Type → Criterion']['Mean'].iloc[0]
+    
+    print(f"""
+    KEY FINDINGS:
+    
+    SDT ANALYSIS:
+    - Difficulty effect on sensitivity (d'): {difficulty_d_mean:.3f}
+    - Stimulus type effect on sensitivity (d'): {stimulus_d_mean:.3f}
+    - Difficulty effect on criterion: {difficulty_c_mean:.3f}
+    - Stimulus type effect on criterion: {stimulus_c_mean:.3f}
+    
+    INTERPRETATION:
+    - {'Hard trials reduce' if difficulty_d_mean < 0 else 'Hard trials increase'} sensitivity
+    - {'Complex stimuli reduce' if stimulus_d_mean < 0 else 'Complex stimuli increase'} sensitivity
+    - Delta plots show RT distribution differences between conditions
+    - Combined analysis reveals both perceptual and decisional effects
+    """)
+    
+    return sdt_data, delta_data, trace, results_df
 
 # Main execution
 if __name__ == "__main__":
-    file_to_print = Path(__file__).parent / 'README.md'
-    with open(file_to_print, 'r') as file:
-        print(file.read())
+    file_path = "data.csv"
+    sdt_data, delta_data, trace, results = main_analysis(file_path)
