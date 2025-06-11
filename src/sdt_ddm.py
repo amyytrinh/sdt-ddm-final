@@ -1,3 +1,5 @@
+# ChatGPT was used to create helper plot functions.
+
 """
 Signal Detection Theory (SDT) and Delta Plot Analysis for Response Time Data
 """
@@ -58,10 +60,10 @@ def read_data(file_path, prepare_for='sdt', display=False):
     data['accuracy'] = data['accuracy'].astype(int)
     
     if display:
-        print("\nRaw data sample:")
+        print("\nRAW DATA SAMPLE:")
         print(data.head())
-        print("\nUnique conditions:", data['condition'].unique())
-        print("Signal values:", data['signal'].unique())
+        print("\nUNIQUE CONDITIONS:", data['condition'].unique())
+        print("SIGNAL VALUES:", data['signal'].unique())
     
     # Transform to SDT format if requested
     if prepare_for == 'sdt':
@@ -103,14 +105,14 @@ def read_data(file_path, prepare_for='sdt', display=False):
         data = pd.DataFrame(sdt_data)
         
         if display:
-            print("\nSDT summary:")
+            print("\nSDT SUMMARY:")
             print(data)
             if data.empty:
                 print("\nWARNING: Empty SDT summary generated!")
                 print("Number of participants:", len(data['pnum'].unique()))
                 print("Number of conditions:", len(data['condition'].unique()))
             else:
-                print("\nSummary statistics:")
+                print("\nSUMMARY STATISTICS:")
                 print(data.groupby('condition').agg({
                     'hits': 'sum',
                     'misses': 'sum',
@@ -169,7 +171,7 @@ def read_data(file_path, prepare_for='sdt', display=False):
         data = pd.DataFrame(dp_data)
                 
         if display:
-            print("\nDelta plots data:")
+            print("\nDELTA PLOTS DATA:")
             print(data.head())
 
     return data
