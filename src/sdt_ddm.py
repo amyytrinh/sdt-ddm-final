@@ -8,6 +8,7 @@ import arviz as az
 import matplotlib.pyplot as plt
 import pandas as pd
 from pathlib import Path
+from scipy import stats
 import os
 
 # Mapping dictionaries for categorical variables
@@ -232,8 +233,8 @@ def apply_hierarchical_sdt_model(data):
         criterion_raw = pm.Normal('criterion_raw', mu=0, sigma=1, shape=P)
         
         # PARAMETERIZATION
-        d_prime = mu_d + sigma_d * d_prime_raw[data['p_idx']]
-        criterion = mu_c + sigma_c * criterion_raw[data['p_idx']]
+        d_prime = mu_d + sigma_d * d_prime_raw[data['p_index']]
+        criterion = mu_c + sigma_c * criterion_raw[data['p_index']]
         
         # DEFINE SDT MODEL
         hit_rate = pm.math.invlogit(d_prime - criterion)
@@ -456,8 +457,8 @@ def main_analysis(file_path):
     
     print("\n*** RUNNING HIERARCHICAL SDT MODEL ***")
     
-    # Make delta plot
-    sdt_model = draw_delta_plots(sdt_data)
+    # Apply SDT model
+    sdt_model = apply_hierarchical_sdt_model(sdt_data)
     
     # Sample from posterior
     with sdt_model:
@@ -470,7 +471,9 @@ def main_analysis(file_path):
     print("\n*** CREATING ENHANCED DELTA PLOTS ***")
     
     # Create delta plots
-    enhanced_delta_plots(delta_data)
+    participants = delta_data['pnum'].unique()
+    for pnum in participants:
+        draw_delta_plots(delta_data, pnum)
     
     print("\n*** SYNTHESIS AND INTERPRETATION ***")
     
