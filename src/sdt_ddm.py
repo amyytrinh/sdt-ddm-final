@@ -435,7 +435,7 @@ def draw_delta_plots(data, pnum):
     plt.tight_layout()
     
     # Save the figure
-    plt.savefig('output/delta_plots_{pnum}.png')
+    plt.savefig(f'output/delta_plots_{pnum}.png')
     plt.show()
 
 def create_aggregate_delta_plots(data, save_plots=True):
